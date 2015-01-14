@@ -3,7 +3,6 @@
 (require redex)
 
 (define-language FLOW
-  (P        F)
   (block    (BL (arg ...) (op ...) x L))
   (op       (x := (opname arg ...)))
   (opname   primop call)
@@ -11,8 +10,10 @@
   (arg      n x)
   (n        integer)
   (x        variable-not-otherwise-mentioned)
-  ((E F)    ((x any) ...))
-  (L        ((n any) ...))
+  (P        ((x F) ...))     ;; Program env    -- mapping from names to functions
+  (E        ((x any) ...))   ;; Evaluation env -- mapping from names to values
+  (F        ((x block) ...)) ;; Block env      -- mapping from names to blocks
+  (L        ((n x) ...))     ;; Link env       -- mapping from values to names
   )
 
 (define-metafunction FLOW
@@ -52,12 +53,29 @@
   [(lookup-env ((x_1 any_1) ...) x_2) #f]
   )
 
+;; Looking up bindings in environments:
 (define-metafunction FLOW+AS
-  lookup-val : L n -> any
-  [(lookup-val ((n_1 any_1) ... (n any) (n_2 any_2) ...) n)
+  lookup-func : P x -> any
+  [(lookup-func ((x_1 F_1) ... (x F) (x_2 F_2) ...) x)
+    F
+   (side-condition (not (member (term x) (term (x_2 ...)))))]
+  [(lookup-func ((x_1 F_1) ...) x_2) #f]
+  )
+
+(define-metafunction FLOW+AS
+  lookup-block : F x -> any
+  [(lookup-block ((x_1 block_1) ... (x block) (x_2 block_2) ...) x)
+    block
+   (side-condition (not (member (term x) (term (x_2 ...)))))]
+  [(lookup-block ((x_1 block_1) ...) x_2) #f]
+  )
+
+(define-metafunction FLOW+AS
+  lookup-link : L n -> any
+  [(lookup-link ((n_1 any_1) ... (n any) (n_2 any_2) ...) n)
     any
    (side-condition (not (member (term n) (term (n_2 ...)))))]
-  [(lookup-val ((n_1 any_1) ...) n_2) #f]
+  [(lookup-link ((n_1 any_1) ...) n_2) #f]
   )
 
 (define-metafunction FLOW+AS
@@ -92,7 +110,7 @@
 
 (define-metafunction FLOW
   entry-block : F -> block
-  [(entry-block F) (lookup-env F entry)]
+  [(entry-block F) (lookup-block F entry)]
   )
 
 (define-metafunction FLOW
@@ -149,7 +167,7 @@
 (define fact-ret
   (term
     (BL (n)
-        ((y4 := (mult 1 1)))
+        ((y4 := (add 1)))
         y4
         ())))
 (redex-match FLOW block fact-entry)
@@ -162,7 +180,7 @@
 (define call-factorial
   (term
     (BL ()
-        ((n := (call fact 5)))
+        ((n := (call fact 10)))
         n
         ())))
 
@@ -170,6 +188,12 @@
   (term (,call-factorial () ε () ((fact ,factorial-function)))))
 
 (redex-match FLOW+AS state fact-prog)
+
+(define-metafunction FLOW+AS
+  copy-env : (arg ...) E -> E
+  [(copy-env (arg ...) E)
+   (extend () (arg ...) (eval-args (arg ...) E))]
+  )
 
 (define reduce-flow
   (reduction-relation FLOW+AS
@@ -187,25 +211,29 @@
           F_1
           P)
          flow-call
-         (where F_1 (lookup-env P arg))
+         (where F_1 (lookup-func P arg))
          (where block (entry-block F_1)))
 
     ;; Done with the block, see if we can find the associated link
     ;; For now, we just send along the whole environment
     (--> ((BL (arg ...) () x L) E S F P)
-         ((lookup-env F (lookup-val L (lookup-env E x))) E S F P)
+         ((BL (arg_1 ...) (op_1 ...) x_1 L_1)
+          (copy-env (arg_1 ...) E) S F P)
          flow-finish-block-link
-         (side-condition
-           (and (term (lookup-env E x))
-                (term (lookup-val L (lookup-env E x))))))
+         (where x_3 (lookup-link L (lookup-env E x)))
+         (where (BL (arg_1 ...) (op_1 ...) x_1 L_1)
+                (lookup-block F x_3)))
+
     ;; If we can't find an associated link, try the default link (-1)
     (--> ((BL (arg ...) () x L) E S F P)
-         ((lookup-env F (lookup-val L -1)) E S F P)
+         ((BL (arg_1 ...) (op_1 ...) x_1 L_1)
+          (copy-env (arg_1 ...) E) S F P)
          flow-finish-block-default
+         (where x_1 (lookup-link L -1))
+         (where (BL (arg_1 ...) (op_1 ...) x_1 L_1) (lookup-block F x_1))
          (side-condition
            (and (term (lookup-env E x))
-                (not (term (lookup-val L (lookup-env E x))))
-                (term (lookup-val L -1)))))
+                (not (term (lookup-link L (lookup-env E x)))))))
 
     ;; Empty set of links means we have a return block.
     ;; We return the value in the exitswitch variable.
@@ -213,6 +241,7 @@
          (block_1 (extend E_1 (x_1) ((lookup-env E x))) S_1 F_1 P)
          flow-return
          (side-condition (and (term (lookup-env E x)))))
+
     ;; Empty links with and empty stack means we are done
     (--> ((BL (arg ...) () x ()) E ε F P)
          (DONE (lookup-env E x))
@@ -222,13 +251,4 @@
 
 ;;(apply-reduction-relation* reduce-flow fact-prog)
 (traces reduce-flow fact-prog)
-
-;;(define-metafunction FLOW+AS
-;;  eval-block : E (op ...) -> (E op ...)
-;;  [(eval-block E ())              (E ())]
-;;  [(eval-block E ((x := (primop arg ...)) op ...))
-;;   (eval-block (eval-primop (x := (primop arg ...)) E) op ...)]
-;;  [(eval-block E ((x := (call arg ...)) op ...))
-;;   (E ((x := (call arg ...)) op ...))]
-;;  )
 
