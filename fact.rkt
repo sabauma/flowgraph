@@ -3,12 +3,14 @@
 (require redex)
 (require "flow.rkt")
 
-(define fact-entry
+(define fact
   (term
     (BL (n)
         ((y0 := (lt n 1)))
         y0
-        ((#f rec) (#t ret)))))
+        ((#f (LINK fact-rec (n y0)))
+         (#t (LINK fact-ret (n)))
+         ))))
 
 (define fact-rec
   (term
@@ -25,12 +27,12 @@
         ((y4 := (add 1)))
         y4
         ())))
-(redex-match FLOW block fact-entry)
+(redex-match FLOW block fact)
 (redex-match FLOW block fact-rec)
 (redex-match FLOW block fact-ret)
 
 (define factorial-function
-  (term ((entry ,fact-entry) (ret ,fact-ret) (rec ,fact-rec))))
+  (term ((fact ,fact) (fact-ret ,fact-ret) (fact-rec ,fact-rec))))
 
 (define call-factorial
   (term
@@ -40,9 +42,9 @@
         ())))
 
 (define fact-prog
-  (term (,call-factorial () ε () ((fact ,factorial-function)))))
+  (term (,call-factorial () ε ,factorial-function)))
 
 (redex-match FLOW+AS state fact-prog)
 
 (apply-reduction-relation* reduce-flow fact-prog)
-;;(traces reduce-flow fact-prog)
+;; (traces reduce-flow fact-prog)
