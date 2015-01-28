@@ -9,7 +9,7 @@
         ((y0 := (lt n 1)))
         y0
         ((#f (LINK fact-rec (n y0)))
-         (#t (LINK fact-ret (n)))
+         (#t (LINK fact-ret ()))
          ))))
 
 (define fact-rec
@@ -23,8 +23,8 @@
 
 (define fact-ret
   (term
-    (BL (n)
-        ((y4 := (add 1)) #;(jit-can-enter y4))
+    (BL ()
+        ((y4 := (add 1)) (jit-can-enter y4))
         y4
         ())))
 (redex-match FLOW+JIT block fact)
@@ -46,5 +46,5 @@
 
 (redex-match FLOW+JIT state fact-prog)
 
-(apply-reduction-relation* reduce-jit fact-prog)
-;; (traces reduce-flow fact-prog)
+;;(apply-reduction-relation* reduce-jit fact-prog)
+(traces reduce-jit fact-prog)
