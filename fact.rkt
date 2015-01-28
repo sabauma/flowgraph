@@ -24,7 +24,7 @@
 (define fact-ret
   (term
     (BL (n)
-        ((y4 := (add 1)))
+        ((y4 := (add 1)) #;(jit-can-enter y4))
         y4
         ())))
 (redex-match FLOW+JIT block fact)

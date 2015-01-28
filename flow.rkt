@@ -61,13 +61,13 @@
   ;;   in the program being interpreted).
   ;; * jit-can-enter: flags a location in the program as a potential place to
   ;;   begin tracing
-  (op          .... (jit-merge-point x) (jit-can-enter x) +)
+  (op          .... (jit-merge-point arg) (jit-can-enter arg) +)
   ;; Operations which may appear in traces. These consist of the normal set of
   ;; operations along with a guard operation.
   ;; * guards: bail back to the saved block if the condition tests as false.
   (trace-op    op (guard x block))
   (trace       (trace-op ...))
-  (trace-state (state val trace))
+  (trace-state (pb E S P val trace))
   )
 
 ;; Based off of https://github.com/esilkensen/cwc/blob/master/mates-silkensen.rkt
@@ -86,7 +86,7 @@
   [(lookup-env ((x_1 any_1) ...) x_2) #f]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   lookup-block : P x -> any
   [(lookup-block ((x_1 block_1) ... (x block) (x_2 block_2) ...) x)
     block
@@ -94,7 +94,7 @@
   [(lookup-block ((x_1 block_1) ...) x_2) #f]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   lookup-link : L lidx -> any
   [(lookup-link ((lidx_1 _) ... (lidx link) (lidx_2 _) ...) lidx)
    link
@@ -102,7 +102,7 @@
   [(lookup-link ((lidx link) ...) lidx_1) #f]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   eval-arg : arg E P -> any
   [(eval-arg x E P) val
    (where (x_1 val) (lookup-env E x))]
@@ -111,40 +111,40 @@
    (side-condition (term (lookup-block P x)))]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   eval-args : (arg ...) E P -> (any ...)
   [(eval-args (arg ...) E P) ((eval-arg arg E P) ...)]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   eval-primop : op E P -> E
   [(eval-primop (x_2 := (primop arg ...)) E P)
    (extend E (x_2) ((δ primop (eval-args (arg ...) E P))))]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   is-primop : op -> any
   [(is-primop (x := (primop arg ...))) #t]
-  [(is-primop (x := (call arg ...)))   #f]
+  [(is-primop _)                       #f]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   entry-block : F -> block
   [(entry-block F) (lookup-block F entry)]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   setup-env : block (val ...) -> E
   [(setup-env (BL (arg ..._0) (op ...) x L) (val ..._0)) (extend () (arg ...) (val ...))]
   )
 
-(define-metafunction FLOW
+(define-metafunction FLOW+JIT
   copy-env : (arg ...) E P -> E
   [(copy-env (arg ...) E P)
    (extend () (arg ...) (eval-args (arg ...) E P))]
   )
 
-(define-metafunction FLOW+AS
+(define-metafunction FLOW+JIT
   make-pb : block -> pb
   [(make-pb (BL args (op ...) x L)) (PB (op ...) x L)])
 
@@ -210,14 +210,40 @@
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
     ;; These operations will need to check the trace cache at some point or add
-    (--> ((PB ((jit-merge-point x_0) op ...) x_1 L) E S P)
-         ((PB (op ...) x_1 L) E S P)
+    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P)
+         ((PB (op ...) x L) E S P)
          jit-merge-point)
 
-    (--> ((PB ((jit-can-enter x_0) op ...) x_1 L) E S P)
-         ((PB (op ...) x_1 L) E S P)
-         jit-can-enter)
+    ;; Begin tracing (no smart heuristics as of yet)
+    (--> ((PB ((jit-can-enter arg) op ...) x L) E S P)
+         ;;((PB (op ...) x L) E S P)
+         ((PB (op ...) x L) E S P (eval-arg arg E P) ())
+         begin-tracing)
 
-    ;; Bits where we handle tracing
+    ;; Tracing operations
+
+    ;; These operations will need to check the trace cache at some point or add
+    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P val trace)
+         ((PB (op ...) x L) E S P)
+         jit-stitch
+         (side-condition (equal? (term (eval-arg arg E P val)) (term val))))
+
+    ;; These operations will need to check the trace cache at some point or add
+    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P val trace)
+         ((PB (op ...) x L) E S P val trace)
+         jit-merge-point2
+         (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
+
+    ;; Begin tracing (no smart heuristics as of yet)
+    ;; (--> ((PB ((jit-can-enter arg) op ...) x L) E S P val trace)
+    ;;      ;;((PB (op ...) x L) E S P)
+    ;;      ((PB (op ...) x L) E S P (eval-arg arg E P) ())
+    ;;      begin-tracing)
+
+    ;; Execute current primop
+    (--> ((PB (op_1 op ...) x L) E S P val trace)
+         ((PB (op ...) x L) (eval-primop op_1 E P) S P val trace)
+         flow-primop
+         (side-condition (term (is-primop op_1))))
     )
   )
