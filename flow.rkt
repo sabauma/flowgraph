@@ -209,10 +209,11 @@
 
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
-    ;; These operations will need to check the trace cache
+    ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point x_0) op ...) x_1 L) E S P)
          ((PB (op ...) x_1 L) E S P)
          jit-merge-point)
+
     (--> ((PB ((jit-can-enter x_0) op ...) x_1 L) E S P)
          ((PB (op ...) x_1 L) E S P)
          jit-can-enter)

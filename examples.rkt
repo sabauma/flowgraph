@@ -13,6 +13,7 @@
   (term
     (BL ()
         ((x1 := (add 1 2))
+         (jit-merge-point x1)
          (x2 := (add 4 x1))
          (x3 := (mult 2 4)))
         x3
@@ -21,7 +22,7 @@
          (-1 (LINK B3 ())))
         )))
 
-(redex-match FLOW block test-block1)
+(redex-match FLOW+JIT block test-block1)
 
 (define test-block2
   (term
@@ -31,7 +32,7 @@
          (y3 := (sub y2 2)))
         y3
         ())))
-(redex-match FLOW block test-block2)
+(redex-match FLOW+JIT block test-block2)
 
 (define test-function
   (term ((B1 ,test-block1) (B2 ,test-block2))))
@@ -39,5 +40,5 @@
 (define test-program
   (term (,test-block1 () ε ,test-function)))
 
-(redex-match FLOW+AS state test-program)
+(redex-match FLOW+JIT state test-program)
 
