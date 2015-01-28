@@ -27,9 +27,9 @@
         ((y4 := (add 1)))
         y4
         ())))
-(redex-match FLOW block fact)
-(redex-match FLOW block fact-rec)
-(redex-match FLOW block fact-ret)
+(redex-match FLOW+JIT block fact)
+(redex-match FLOW+JIT block fact-rec)
+(redex-match FLOW+JIT block fact-ret)
 
 (define factorial-function
   (term ((fact ,fact) (fact-ret ,fact-ret) (fact-rec ,fact-rec))))
@@ -44,7 +44,7 @@
 (define fact-prog
   (term (,call-factorial () ε ,factorial-function)))
 
-(redex-match FLOW+AS state fact-prog)
+(redex-match FLOW+JIT state fact-prog)
 
-(apply-reduction-relation* reduce-flow fact-prog)
+(apply-reduction-relation* reduce-jit fact-prog)
 ;; (traces reduce-flow fact-prog)

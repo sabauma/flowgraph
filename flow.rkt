@@ -5,11 +5,13 @@
 (require redex)
 
 (define-language FLOW
-  (block    (BL (arg ...) (op ...) x L))
+  ;; TODO: What if we had partial blocks?
+  (block    (BL args (op ...) x L))
   (op       (x := (opname arg ...)))
   (opname   primop call)
   (primop   add sub mult div equal lt cons car cdr)
   (arg      val x)
+  (args     (arg ...))
   (val      n b funptr (val ...))
   (link     (LINK x (arg ...))) ;; Link -- contains the block id and args to pass
   (lidx     n b default)        ;; Link index
@@ -39,19 +41,33 @@
   )
 
 (define-extended-language FLOW+AS FLOW
-  (S ε (FR E x block S)) ;; Stack: environment and remainder of block
+  ;; pblocks are partial blocks
+  ;; They contain only the information necessarry for executing
+  ;; the current block, which means they don't need their argument list
+  (pb (PB (op ...) x L))
+  (S  ε (FR E x pb S)) ;; Stack: environment and remainder of block
   ;; Interpreter state consissts of
   ;; * Current block being interpreted
   ;; * Environment
   ;; * Stack
   ;; * Current function (collection of blocks)
   ;; * Current program  (collection of functions)
-  (state (DONE n) (block E S P))
+  (state    (DONE n) (block E S P) (pb E S P))
   )
 
 (define-extended-language FLOW+JIT FLOW+AS
-  (op    (jit-merge-point val) (jit-can-enter val) (guard x) +)
-  (trace (op ...))
+  ;; We add in the JIT related operations
+  ;; * jit-merge-point: declares where we are during executions (i.e. the location
+  ;;   in the program being interpreted).
+  ;; * jit-can-enter: flags a location in the program as a potential place to
+  ;;   begin tracing
+  (op          .... (jit-merge-point x) (jit-can-enter x) +)
+  ;; Operations which may appear in traces. These consist of the normal set of
+  ;; operations along with a guard operation.
+  ;; * guards: bail back to the saved block if the condition tests as false.
+  (trace-op    op (guard x block))
+  (trace       (trace-op ...))
+  (trace-state (state val trace))
   )
 
 ;; Based off of https://github.com/esilkensen/cwc/blob/master/mates-silkensen.rkt
@@ -128,19 +144,29 @@
    (extend () (arg ...) (eval-args (arg ...) E P))]
   )
 
+(define-metafunction FLOW+AS
+  make-pb : block -> pb
+  [(make-pb (BL args (op ...) x L)) (PB (op ...) x L)])
+
 (define reduce-flow
   (reduction-relation FLOW+AS
+    ;; Program entry point: converts the entry block into a partial block for the
+    ;; rest of the rules
+    (--> (block E S P)
+         ((make-pb block) E S P)
+         enter-program)
+
     ;; Execute current primop
-    (--> ((BL (arg ...) (op_1 op ...) x L) E S P)
-         ((BL (arg ...) (op ...) x L) (eval-primop op_1 E P) S P)
+    (--> ((PB (op_1 op ...) x L) E S P)
+         ((PB (op ...) x L) (eval-primop op_1 E P) S P)
          flow-primop
          (side-condition (term (is-primop op_1))))
 
     ;; Perform call operation
-    (--> ((BL (arg_0 ...) ((x_1 := (call arg arg_1 ...)) op ...) x L) E S P)
-         (block
+    (--> ((PB ((x_1 := (call arg arg_1 ...)) op ...) x L) E S P)
+         ((make-pb block)
           (setup-env block (eval-args (arg_1 ...) E P))
-          (FR E x_1 (BL (arg_0 ...) (op ...) x L) S)
+          (FR E x_1 (PB (op ...) x L) S)
           P)
          flow-call
          (where (FUN x_2) (eval-arg arg E P))
@@ -148,8 +174,8 @@
 
     ;; Done with the block, see if we can find the associated link
     ;; For now, we just send along the whole environment
-    (--> ((BL (_ ...) () x L) E S P)
-         (block (setup-env block (eval-args (arg_1 ...) E P)) S P)
+    (--> ((PB () x L) E S P)
+         ((make-pb block) (setup-env block (eval-args (arg_1 ...) E P)) S P)
          flow-finish-block-link
          ;; Get the value for the exit switch variable
          (where val (eval-arg x E P))
@@ -158,27 +184,39 @@
          (where block (lookup-block P x_2)))
 
     ;; If we can't find an associated link, try the default link (-1)
-    (--> ((BL (arg ...) () x L) E S P)
-         ((BL (arg_1 ...) (op_1 ...) x_1 L_1)
-          (copy-env (arg_1 ...) E P) S P)
+    (--> ((PB () x L) E S P)
+         ((PB (op_1 ...) x_1 L_1) (copy-env args_1 E P) S P)
          flow-finish-block-default
          (where x_1 (lookup-link L default))
-         (where (BL (arg_1 ...) (op_1 ...) x_1 L_1) (lookup-block P x_1))
+         (where (BL args_1 (op_1 ...) x_1 L_1) (lookup-block P x_1))
          (where (_ val) (lookup-env E x))
          (side-condition
            (not (term (lookup-link L val)))))
 
     ;; Empty set of links means we have a return block.
     ;; We return the value in the exitswitch variable.
-    (--> ((BL (arg ...) () x ()) E (FR E_1 x_1 block_1 S_1) P)
-         (block_1 (extend E_1 (x_1) (val)) S_1 P)
+    (--> ((PB () x ()) E (FR E_1 x_1 pb S_1) P)
+         (pb (extend E_1 (x_1) (val)) S_1 P)
          flow-return
          (where (_ val) (lookup-env E x)))
 
     ;; Empty links with and empty stack means we are done
-    (--> ((BL (arg ...) () x ()) E ε P)
+    (--> ((PB () x ()) E ε P)
          (DONE (lookup-env E x))
          flow-exit)
     )
   )
 
+(define reduce-jit
+  (extend-reduction-relation reduce-flow FLOW+JIT
+    ;; These operations will need to check the trace cache
+    (--> ((PB ((jit-merge-point x_0) op ...) x_1 L) E S P)
+         ((PB (op ...) x_1 L) E S P)
+         jit-merge-point)
+    (--> ((PB ((jit-can-enter x_0) op ...) x_1 L) E S P)
+         ((PB (op ...) x_1 L) E S P)
+         jit-can-enter)
+
+    ;; Bits where we handle tracing
+    )
+  )
