@@ -185,10 +185,10 @@
 
     ;; If we can't find an associated link, try the default link (-1)
     (--> ((PB () x L) E S P)
-         ((PB (op_1 ...) x_1 L_1) (copy-env args_1 E P) S P)
+         (block (setup-env block (eval-args (arg_1 ...) E P)) S P)
          flow-finish-block-default
-         (where x_1 (lookup-link L default))
-         (where (BL args_1 (op_1 ...) x_1 L_1) (lookup-block P x_1))
+         (where (LINK x_1 (arg_1 ...)) (lookup-link L default))
+         (where block (lookup-block P x_1))
          (where (_ val) (lookup-env E x))
          (side-condition
            (not (term (lookup-link L val)))))
@@ -231,7 +231,7 @@
     ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point arg) op ...) x L) E S P val trace)
          ((PB (op ...) x L) E S P val trace)
-         jit-merge-point2
+         jit-merge-point-tracing
          (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
 
     ;; Begin tracing (no smart heuristics as of yet)
@@ -241,9 +241,9 @@
     ;;      begin-tracing)
 
     ;; Execute current primop
-    (--> ((PB (op_1 op ...) x L) E S P val trace)
-         ((PB (op ...) x L) (eval-primop op_1 E P) S P val trace)
-         flow-primop
+    (--> ((PB (op_1 op ...) x L) E S P val (trace-op ...))
+         ((PB (op ...) x L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
+         flow-primop-tracing
          (side-condition (term (is-primop op_1))))
     )
   )
