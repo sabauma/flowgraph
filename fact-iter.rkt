@@ -17,8 +17,7 @@
         ((st := (lt n 1)))
         st
         ((#t (LINK fact-done (acc)))
-         (#f (LINK fact-body (n acc)))
-         )
+         (#f (LINK fact-body (n acc))))
         )))
 
 (define fact-body
