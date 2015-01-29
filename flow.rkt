@@ -65,8 +65,9 @@
   (op          .... (jit-merge-point arg) (jit-can-enter arg) +)
   ;; Operations which may appear in traces. These consist of the normal set of
   ;; operations along with a guard operation.
-  ;; * guards: bail back to the saved block if the condition tests as false.
-  (trace-op    op (guard x block))
+  ;; * guards: bail back to the saved block if the argument supplied does not
+  ;;   evaluate to the value specified.
+  (trace-op    op (guard arg val block))
   (trace       (trace-op ...))
   (trace-state (pb E S P val trace))
   )
@@ -201,45 +202,45 @@
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
     ;; These operations will need to check the trace cache at some point or add
-    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P)
-         ((PB (op ...) x L) E S P)
+    (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P)
+         ((PB (op ...) arg_1 L) E S P)
          jit-merge-point)
 
     ;; Begin tracing (no smart heuristics as of yet)
-    (--> ((PB ((jit-can-enter arg) op ...) x L) E S P)
+    (--> ((PB ((jit-can-enter arg) op ...) arg_1 L) E S P)
          ;;((PB (op ...) x L) E S P)
-         ((PB (op ...) x L) E S P (eval-arg arg E P) ())
+         ((PB (op ...) arg_1 L) E S P (eval-arg arg E P) ())
          begin-tracing)
 
     ;; Tracing operations
 
     ;; These operations will need to check the trace cache at some point or add
-    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P val trace)
-         ((PB (op ...) x L) E S P)
+    (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
+         ((PB (op ...) arg_1 L) E S P)
          jit-stitch
          (side-condition (equal? (term (eval-arg arg E P val)) (term val))))
 
     ;; These operations will need to check the trace cache at some point or add
-    (--> ((PB ((jit-merge-point arg) op ...) x L) E S P val trace)
-         ((PB (op ...) x L) E S P val trace)
+    (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
+         ((PB (op ...) arg_1 L) E S P val trace)
          jit-merge-point-tracing
          (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
 
     ;; Execute current primop
-    (--> ((PB (op_1 op ...) x L) E S P val (trace-op ...))
-         ((PB (op ...) x L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
+    (--> ((PB (op_1 op ...) arg L) E S P val (trace-op ...))
+         ((PB (op ...) arg L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
          flow-primop-tracing
          (side-condition (term (is-primop op_1))))
 
     ;; Follow a link while tracing. This needs to insert a guard into the trace
     ;; to ensure it does not diverge from the recorded execution path.
-    (--> ((PB () x L) E S P val (trace-op ...))
+    (--> ((PB () arg L) E S P val (trace-op ...))
          ((make-pb block)
           (setup-env block (eval-args (arg_1 ...) E P))
           S P val
-          (trace-op ... (guard x (PB () x L))))
+          (trace-op ... (guard arg val (PB () x L))))
          flow-finish-block-link-tracing
-         (where val (eval-arg x E P))
+         (where val (eval-arg arg E P))
          (where (LINK x_1 (arg_1 ...)) (lookup-link L val))
          (where block (lookup-block P x_1)))
     )
