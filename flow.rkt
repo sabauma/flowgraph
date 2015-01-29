@@ -226,7 +226,7 @@
          jit-merge-point-tracing
          (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
 
-    ;; Execute current primop
+    ;; Execute current primop and record it
     (--> ((PB (op_1 op ...) arg L) E S P val (trace-op ...))
          ((PB (op ...) arg L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
          flow-primop-tracing
