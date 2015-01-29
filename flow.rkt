@@ -5,7 +5,7 @@
 (require redex)
 
 (define-language FLOW
-  (block    (BL args (op ...) x L))
+  (block    (BL args (op ...) arg L))
   (op       (x := (opname arg ...)))
   (opname   primop call)
   (primop   add sub mult div equal lt cons car cdr null?)
@@ -45,8 +45,8 @@
   ;; pblocks are partial blocks
   ;; They contain only the information necessarry for executing
   ;; the current block, which means they don't need their argument list
-  (pb (PB (op ...) x L))
-  (S  ε (FR E x pb S)) ;; Stack: environment and remainder of block
+  (pb       (PB (op ...) arg L))
+  (S        ε (FR E x pb S)) ;; Stack: environment and remainder of block
   ;; Interpreter state consissts of
   ;; * Current block being interpreted
   ;; * Environment
@@ -104,7 +104,7 @@
   )
 
 (define-metafunction FLOW+JIT
-  eval-arg : arg E P -> any
+  eval-arg : arg E P -> val
   [(eval-arg x E P) val
    (where (x_1 val) (lookup-env E x))]
   [(eval-arg val E P) val]
@@ -136,7 +136,7 @@
 
 (define-metafunction FLOW+JIT
   setup-env : block (val ...) -> E
-  [(setup-env (BL (arg ..._0) (op ...) x L) (val ..._0)) (extend () (arg ...) (val ...))]
+  [(setup-env (BL (arg ..._0) (op ...) _ L) (val ..._0)) (extend () (arg ...) (val ...))]
   )
 
 (define-metafunction FLOW+JIT
@@ -147,7 +147,7 @@
 
 (define-metafunction FLOW+JIT
   make-pb : block -> pb
-  [(make-pb (BL args (op ...) x L)) (PB (op ...) x L)])
+  [(make-pb (BL args (op ...) arg L)) (PB (op ...) arg L)])
 
 (define reduce-flow
   (reduction-relation FLOW+AS
@@ -158,16 +158,16 @@
          enter-program)
 
     ;; Execute current primop
-    (--> ((PB (op_1 op ...) x L) E S P)
-         ((PB (op ...) x L) (eval-primop op_1 E P) S P)
+    (--> ((PB (op_1 op ...) arg L) E S P)
+         ((PB (op ...) arg L) (eval-primop op_1 E P) S P)
          flow-primop
          (side-condition (term (is-primop op_1))))
 
     ;; Perform call operation
-    (--> ((PB ((x_1 := (call arg arg_1 ...)) op ...) x L) E S P)
+    (--> ((PB ((x_1 := (call arg arg_1 ...)) op ...) arg_2 L) E S P)
          ((make-pb block)
           (setup-env block (eval-args (arg_1 ...) E P))
-          (FR E x_1 (PB (op ...) x L) S)
+          (FR E x_1 (PB (op ...) arg_2 L) S)
           P)
          flow-call
          (where (FUN x_2) (eval-arg arg E P))
@@ -175,35 +175,25 @@
 
     ;; Done with the block, see if we can find the associated link
     ;; For now, we just send along the whole environment
-    (--> ((PB () x L) E S P)
+    (--> ((PB () arg L) E S P)
          ((make-pb block) (setup-env block (eval-args (arg_1 ...) E P)) S P)
          flow-finish-block-link
          ;; Get the value for the exit switch variable
-         (where val (eval-arg x E P))
+         (where val (eval-arg arg E P))
          ;; Get the corresponding link
-         (where (LINK x_2 (arg_1 ...)) (lookup-link L val))
-         (where block (lookup-block P x_2)))
-
-    ;; If we can't find an associated link, try the default link (-1)
-    (--> ((PB () x L) E S P)
-         (block (setup-env block (eval-args (arg_1 ...) E P)) S P)
-         flow-finish-block-default
-         (where (LINK x_1 (arg_1 ...)) (lookup-link L default))
-         (where block (lookup-block P x_1))
-         (where (_ val) (lookup-env E x))
-         (side-condition
-           (not (term (lookup-link L val)))))
+         (where (LINK x_1 (arg_1 ...)) (lookup-link L val))
+         (where block (lookup-block P x_1)))
 
     ;; Empty set of links means we have a return block.
     ;; We return the value in the exitswitch variable.
-    (--> ((PB () x ()) E (FR E_1 x_1 pb S_1) P)
+    (--> ((PB () arg ()) E (FR E_1 x_1 pb S_1) P)
          (pb (extend E_1 (x_1) (val)) S_1 P)
          flow-return
-         (where (_ val) (lookup-env E x)))
+         (where val (eval-arg arg E P)))
 
     ;; Empty links with and empty stack means we are done
-    (--> ((PB () x ()) E ε P)
-         (DONE (lookup-env E x))
+    (--> ((PB () arg ()) E ε P)
+         (DONE (eval-arg arg E P))
          flow-exit)
     )
   )
@@ -240,5 +230,17 @@
          ((PB (op ...) x L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
          flow-primop-tracing
          (side-condition (term (is-primop op_1))))
+
+    ;; Follow a link while tracing. This needs to insert a guard into the trace
+    ;; to ensure it does not diverge from the recorded execution path.
+    (--> ((PB () x L) E S P val (trace-op ...))
+         ((make-pb block)
+          (setup-env block (eval-args (arg_1 ...) E P))
+          S P val
+          (trace-op ... (guard x (PB () x L))))
+         flow-finish-block-link-tracing
+         (where val (eval-arg x E P))
+         (where (LINK x_1 (arg_1 ...)) (lookup-link L val))
+         (where block (lookup-block P x_1)))
     )
   )

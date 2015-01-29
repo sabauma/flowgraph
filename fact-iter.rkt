@@ -7,8 +7,8 @@
   (term
     (BL (n)
         ()
-        n
-        ((default (LINK fact-loop (n 1)))
+        #f
+        ((#f (LINK fact-loop (n 1)))
          ))))
 
 (define fact-loop
@@ -25,8 +25,8 @@
     (BL (n acc)
         ((n1   := (sub n 1))
          (acc1 := (mult acc n)))
-        n
-        ((default (LINK fact-loop (n1 acc1)))))))
+        #f
+        ((#f (LINK fact-loop (n1 acc1)))))))
 
 (define fact-done
   (term (BL (acc) () acc ())))
