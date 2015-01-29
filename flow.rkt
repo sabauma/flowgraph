@@ -5,11 +5,10 @@
 (require redex)
 
 (define-language FLOW
-  ;; TODO: What if we had partial blocks?
   (block    (BL args (op ...) x L))
   (op       (x := (opname arg ...)))
   (opname   primop call)
-  (primop   add sub mult div equal lt cons car cdr)
+  (primop   add sub mult div equal lt cons car cdr null?)
   (arg      val x)
   (args     (arg ...))
   (val      n b funptr (val ...))
@@ -38,6 +37,8 @@
   [(δ cons  (val (val_1 ...))) (val val_1 ...)]
   [(δ head  ((val _ ...)))     val]
   [(δ tail  ((_ val ...)))     (val ...)]
+  [(δ null? (()))              #t]
+  [(δ null? _)                 #f]
   )
 
 (define-extended-language FLOW+AS FLOW
@@ -233,12 +234,6 @@
          ((PB (op ...) x L) E S P val trace)
          jit-merge-point-tracing
          (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
-
-    ;; Begin tracing (no smart heuristics as of yet)
-    ;; (--> ((PB ((jit-can-enter arg) op ...) x L) E S P val trace)
-    ;;      ;;((PB (op ...) x L) E S P)
-    ;;      ((PB (op ...) x L) E S P (eval-arg arg E P) ())
-    ;;      begin-tracing)
 
     ;; Execute current primop
     (--> ((PB (op_1 op ...) x L) E S P val (trace-op ...))
