@@ -9,6 +9,14 @@
 (test-equal (term (eval-primop (x := (add 1 2)) () ())) '((x 3)))
 (test-equal (term (eval-primop (x := (add y z)) ((y 1) (z 2)) ())) '((y 1) (z 2) (x 3)))
 
+(define example1 (term (x := (add 1 a b c 2))))
+(define example2 (term (y := (add x c d e))))
+
+(test-equal (term (referenced-vars ,example1)) '(a b c))
+(test-equal (term (assigned-vars ,example1)) '(x))
+
+(test-equal (term (free-vars (,example1 ,example2))) '(a b c))
+
 (define test-block1
   (term
     (BL ()

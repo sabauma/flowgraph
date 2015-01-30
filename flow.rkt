@@ -1,4 +1,4 @@
-#lang racket/base
+#lang racket
 
 (provide (all-defined-out))
 
@@ -62,12 +62,12 @@
   ;;   in the program being interpreted).
   ;; * jit-can-enter: flags a location in the program as a potential place to
   ;;   begin tracing
-  (op          .... (jit-merge-point arg) (jit-can-enter arg) +)
+  (op          .... (guard arg val block) (jit-merge-point arg) (jit-can-enter arg) +)
   ;; Operations which may appear in traces. These consist of the normal set of
   ;; operations along with a guard operation.
   ;; * guards: bail back to the saved block if the argument supplied does not
   ;;   evaluate to the value specified.
-  (trace-op    op (guard arg val block))
+  (trace-op    op)
   (trace       (trace-op ...))
   (trace-state (pb E S P val trace))
   )
@@ -199,9 +199,47 @@
     )
   )
 
+(define-metafunction FLOW+JIT
+  get-args : op -> (arg ...)
+  [(get-args (_ := (opname arg ...))) (arg ...)]
+  [(get-args (guard arg _ _))         (arg)]
+  [(get-args (jit-merge-point arg))   (arg)]
+  [(get-args (jit-can-enter arg))     (arg)]
+  )
+
+(define-metafunction FLOW+JIT
+  referenced-vars : op -> (x ...)
+  [(referenced-vars op)
+   ,(filter
+      (lambda (o) (redex-match FLOW+JIT x o))
+      (term (get-args op)))])
+
+(define-metafunction FLOW+JIT
+  assigned-vars : op -> (x ...)
+  [(assigned-vars (x := _)) (x)]
+  [(assigned-vars _       ) () ]
+  )
+
+(define-metafunction FLOW+JIT
+  free-vars : trace -> (x ...)
+  [(free-vars trace)
+   ,(foldr
+      (lambda (op acc)
+        (set-union (term (referenced-vars ,op))
+          (set-subtract (term (assigned-vars ,op)) acc)))
+      '()
+      (term trace))])
+
+;; Not working as of yet
+(define-metafunction FLOW+JIT
+  compile : trace -> block
+  [(compile trace)
+   (BL (free-vars trace) trace #f ((#f (LINK target ()))))]
+  )
+
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
-    ;; These operations will need to check the trace cache at some point or add
+    ;; These operations will need to check the trace cache at some point
     (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P)
          ((PB (op ...) arg_1 L) E S P)
          jit-merge-point)
