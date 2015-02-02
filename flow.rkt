@@ -249,6 +249,7 @@
    (BL (free-vars trace) trace #f ((#f (LINK target ()))))]
   )
 
+;; Splice a sequence of traces into a single trace using magic
 (define-metafunction FLOW+JIT
   splice : trace ... -> trace
   [(splice (trace-op ...) ...) (trace-op ... ...)])
@@ -292,8 +293,7 @@
           (setup-env block (eval-args args E P))
           S P val
           (splice
-            (trace-op ...)
-            (guard arg val (PB () x L))
+            (trace-op ... (guard arg val (PB () x L)))
             (make-env-moves (block-args block) args)))
          flow-finish-block-link-tracing
          (where val (eval-arg arg E P))

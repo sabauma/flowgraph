@@ -55,5 +55,6 @@
 
 (redex-match FLOW+JIT trace example-tr)
 
-(term (splice ,example-tr ,example-tr ,example-tr))
+(test-equal (term (splice ,example-tr ,example-tr ,example-tr))
+            (append example-tr example-tr example-tr))
 
