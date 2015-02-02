@@ -8,7 +8,7 @@
   (block    (BL args (op ...) arg L))
   (op       (x := (opname arg ...)))
   (opname   primop call)
-  (primop   add sub mult div equal lt cons car cdr null?)
+  (primop   add sub mult div equal lt cons car cdr null? get)
   (arg      val x)
   (args     (arg ...))
   (val      n b funptr (val ...))
@@ -39,6 +39,7 @@
   [(δ tail  ((_ val ...)))     (val ...)]
   [(δ null? (()))              #t]
   [(δ null? _)                 #f]
+  [(δ get   (val))             val]
   )
 
 (define-extended-language FLOW+AS FLOW
@@ -63,8 +64,7 @@
   ;; * jit-can-enter: flags a location in the program as a potential place to
   ;;   begin tracing
   (op          .... (guard arg val block) (jit-merge-point arg) (jit-can-enter arg) +)
-  ;; Operations which may appear in traces. These consist of the normal set of
-  ;; operations along with a guard operation.
+  ;; Operations which may appear in traces. These consist of the normal set of ;; operations along with a guard operation.
   ;; * guards: bail back to the saved block if the argument supplied does not
   ;;   evaluate to the value specified.
   (trace-op    op)
@@ -149,6 +149,18 @@
 (define-metafunction FLOW+JIT
   make-pb : block -> pb
   [(make-pb (BL args (op ...) arg L)) (PB (op ...) arg L)])
+
+;;(define-metafunction FLOW+JIT
+;;  make-env-move : arg x
+
+(define-metafunction FLOW+JIT
+  make-env-moves : (arg ...) (x ...) -> (op ...)
+  [(make-env-moves (arg ..._1) (x ..._1))
+   ((x := (get arg)) ...)])
+
+(define-metafunction FLOW+JIT
+  block-args : block -> (arg ...)
+  [(block-args (BL (arg ...) _ _ _)) (arg ...)])
 
 (define reduce-flow
   (reduction-relation FLOW+AS
@@ -237,6 +249,10 @@
    (BL (free-vars trace) trace #f ((#f (LINK target ()))))]
   )
 
+(define-metafunction FLOW+JIT
+  splice : trace ... -> trace
+  [(splice (trace-op ...) ...) (trace-op ... ...)])
+
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
     ;; These operations will need to check the trace cache at some point
@@ -246,7 +262,6 @@
 
     ;; Begin tracing (no smart heuristics as of yet)
     (--> ((PB ((jit-can-enter arg) op ...) arg_1 L) E S P)
-         ;;((PB (op ...) x L) E S P)
          ((PB (op ...) arg_1 L) E S P (eval-arg arg E P) ())
          begin-tracing)
 
@@ -274,12 +289,16 @@
     ;; to ensure it does not diverge from the recorded execution path.
     (--> ((PB () arg L) E S P val (trace-op ...))
          ((make-pb block)
-          (setup-env block (eval-args (arg_1 ...) E P))
+          (setup-env block (eval-args args E P))
           S P val
-          (trace-op ... (guard arg val (PB () x L))))
+          (splice
+            (trace-op ...)
+            (guard arg val (PB () x L))
+            (make-env-moves (block-args block) args)))
          flow-finish-block-link-tracing
          (where val (eval-arg arg E P))
-         (where (LINK x_1 (arg_1 ...)) (lookup-link L val))
+         (where (LINK x_1 args) (lookup-link L val))
          (where block (lookup-block P x_1)))
     )
   )
+

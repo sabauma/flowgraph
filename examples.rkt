@@ -50,3 +50,10 @@
 
 (redex-match FLOW+JIT state test-program)
 
+(define example-tr
+  (term ((x1 := (get 1)) (x := (get 2)))))
+
+(redex-match FLOW+JIT trace example-tr)
+
+(term (splice ,example-tr ,example-tr ,example-tr))
+
