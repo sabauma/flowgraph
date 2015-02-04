@@ -244,9 +244,12 @@
 
 ;; Not working as of yet
 (define-metafunction FLOW+JIT
-  compile : trace -> block
+  compile : trace -> (block link)
   [(compile trace)
-   (BL (free-vars trace) trace #f ((#f (LINK target ()))))]
+   ,(let ([name (gensym)])
+      (term
+        ((BL (free-vars trace) trace #f ((#f (LINK ,name (free-vars trace)))))
+         (LINK ,name (free-vars trace)))))]
   )
 
 ;; Splice a sequence of traces into a single trace using magic
@@ -282,18 +285,21 @@
 
     ;; Execute current primop and record it
     (--> ((PB (op_1 op ...) arg L) E S P val (trace-op ...))
-         ((PB (op ...) arg L) (eval-primop op_1 E P) S P val (trace-op ... op_1))
+         ((PB (op ...) arg L)
+          (eval-primop op_1 E P) S P val
+          (trace-op ... op_1))
          flow-primop-tracing
          (side-condition (term (is-primop op_1))))
 
     ;; Follow a link while tracing. This needs to insert a guard into the trace
     ;; to ensure it does not diverge from the recorded execution path.
-    (--> ((PB () arg L) E S P val (trace-op ...))
+    (--> ((PB () arg L) E S P val trace)
          ((make-pb block)
           (setup-env block (eval-args args E P))
           S P val
           (splice
-            (trace-op ... (guard arg val (PB () x L)))
+            trace
+            (guard arg val (PB () x L))
             (make-env-moves (block-args block) args)))
          flow-finish-block-link-tracing
          (where val (eval-arg arg E P))

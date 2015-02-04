@@ -54,7 +54,7 @@
   (term ((x1 := (get 1)) (x := (get 2)))))
 
 (redex-match FLOW+JIT trace example-tr)
-
 (test-equal (term (splice ,example-tr ,example-tr ,example-tr))
             (append example-tr example-tr example-tr))
 
+(term (compile ,example-tr))
