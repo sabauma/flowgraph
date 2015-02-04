@@ -63,7 +63,7 @@
   ;;   in the program being interpreted).
   ;; * jit-can-enter: flags a location in the program as a potential place to
   ;;   begin tracing
-  (op          .... (guard arg val block) (jit-merge-point arg) (jit-can-enter arg) +)
+  (op          .... (guard arg val pb) (jit-merge-point arg) (jit-can-enter arg) +)
   ;; Operations which may appear in traces. These consist of the normal set of ;; operations along with a guard operation.
   ;; * guards: bail back to the saved block if the argument supplied does not
   ;;   evaluate to the value specified.
@@ -220,8 +220,10 @@
   )
 
 (define-metafunction FLOW+JIT
-  referenced-vars : op -> (x ...)
-  [(referenced-vars op)
+  free-vars-op : op -> (x ...)
+  [(free-vars-op (guard arg val (PB trace _ _)))
+   (free-vars trace)]
+  [(free-vars-op op)
    ,(filter
       (lambda (o) (redex-match FLOW+JIT x o))
       (term (get-args op)))])
@@ -237,7 +239,7 @@
   [(free-vars trace)
    ,(foldr
       (lambda (op acc)
-        (set-union (term (referenced-vars ,op))
+        (set-union (term (free-vars-op ,op))
           (set-subtract (term (assigned-vars ,op)) acc)))
       '()
       (term trace))])
