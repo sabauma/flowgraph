@@ -12,7 +12,7 @@
 (define example1 (term (x := (add 1 a b c 2))))
 (define example2 (term (y := (add x c d e))))
 
-(test-equal (term (referenced-vars ,example1)) '(a b c))
+(test-equal (term (free-vars-op ,example1)) '(a b c))
 (test-equal (term (assigned-vars ,example1)) '(x))
 
 (test-equal (term (free-vars (,example1 ,example2))) '(a b c))
@@ -58,3 +58,4 @@
             (append example-tr example-tr example-tr))
 
 (term (compile ,example-tr))
+

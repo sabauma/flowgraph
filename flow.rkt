@@ -219,14 +219,16 @@
   [(get-args (jit-can-enter arg))     (arg)]
   )
 
+(define (is-variable? o) (redex-match FLOW+JIT x o))
+
+;; Compue the free variables of a given operation.
+;; For most operations, these are th
 (define-metafunction FLOW+JIT
   free-vars-op : op -> (x ...)
   [(free-vars-op (guard arg val (PB trace _ _)))
-   (free-vars trace)]
+   ,(filter is-variable? (cons (term arg) (term (free-vars trace))))]
   [(free-vars-op op)
-   ,(filter
-      (lambda (o) (redex-match FLOW+JIT x o))
-      (term (get-args op)))])
+   ,(filter is-variable? (term (get-args op)))])
 
 (define-metafunction FLOW+JIT
   assigned-vars : op -> (x ...)
