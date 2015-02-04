@@ -246,11 +246,10 @@
 (define-metafunction FLOW+JIT
   compile : trace -> (block link)
   [(compile trace)
-   ,(let ([name (gensym)])
-      (term
-        ((BL (free-vars trace) trace #f ((#f (LINK ,name (free-vars trace)))))
-         (LINK ,name (free-vars trace)))))]
-  )
+   ((BL (x_0 ...) trace #f ((#f (LINK x_1 (x_0 ...)))))
+    (LINK x_1 (x_0 ...)))
+   (where (x_0 ...) (free-vars trace))
+   (where x_1 ,(gensym))])
 
 ;; Splice a sequence of traces into a single trace using magic
 (define-metafunction FLOW+JIT
