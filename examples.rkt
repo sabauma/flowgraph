@@ -15,7 +15,7 @@
 (test-equal (term (free-vars-op ,example1)) '(a b c))
 (test-equal (term (assigned-vars ,example1)) '(x))
 
-(test-equal (term (free-vars (,example1 ,example2))) '(a b c))
+(test-equal (term (free-vars (,example1 ,example2))) '(d e a b c))
 
 (define test-block1
   (term
@@ -52,6 +52,7 @@
 
 (define example-tr
   (term ((x1 := (get 1)) (x := (get 2)))))
+
 
 (redex-match FLOW+JIT trace example-tr)
 (test-equal (term (splice ,example-tr ,example-tr ,example-tr))

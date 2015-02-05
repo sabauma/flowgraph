@@ -14,7 +14,9 @@
 (define fact-loop
   (term
     (BL (n acc)
-        ((st := (lt n 1)))
+        ((jit-merge-point 1)
+         (jit-can-enter 1)
+         (st := (lt n 1)))
         st
         ((#t (LINK fact-done (acc)))
          (#f (LINK fact-body (n acc))))
@@ -51,5 +53,56 @@
 
 (redex-match FLOW+JIT state fact-prog)
 
-(apply-reduction-relation* reduce-jit fact-prog)
-;;(traces reduce-jit fact-prog)
+;;(apply-reduction-relation* reduce-jit fact-prog)
+(traces reduce-jit fact-prog)
+
+(define ex
+  (term
+     ((PB
+      ()
+      st
+      ((#t (LINK fact-done (acc)))
+       (#f
+        (LINK
+         fact-body
+         (n acc)))))
+     ((n 5) (acc 1) (st #f))
+     (FR () n (PB () n ()) ε)
+     ((fact
+       (BL
+        (n)
+        ()
+        #f
+        ((#f
+          (LINK
+           fact-loop
+           (n 1))))))
+      (fact-loop
+       (BL
+        (n acc)
+        ((jit-merge-point 1)
+         (jit-can-enter 1)
+         (st := (lt n 1)))
+        st
+        ((#t
+          (LINK fact-done (acc)))
+         (#f
+          (LINK
+           fact-body
+           (n acc))))))
+      (fact-body
+       (BL
+        (n acc)
+        ((n1 := (sub n 1))
+         (acc1 := (mult acc n)))
+        #f
+        ((#f
+          (LINK
+           fact-loop
+           (n1 acc1))))))
+      (fact-done
+       (BL (acc) () acc ())))
+     1
+     ((st := (lt n 1))))))
+;;(redex-match FLOW+JIT trace-state ex)
+

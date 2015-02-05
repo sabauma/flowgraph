@@ -12,7 +12,7 @@
   (arg      val x)
   (args     (arg ...))
   (val      n b funptr (val ...))
-  (link     (LINK x (arg ...))) ;; Link -- contains the block id and args to pass
+  (link     (LINK x args))      ;; Link -- contains the block id and args to pass
   (lidx     n b default)        ;; Link index
   (funptr   (FUN x))
   (n        integer)
@@ -189,12 +189,12 @@
     ;; Done with the block, see if we can find the associated link
     ;; For now, we just send along the whole environment
     (--> ((PB () arg L) E S P)
-         ((make-pb block) (setup-env block (eval-args (arg_1 ...) E P)) S P)
+         ((make-pb block) (setup-env block (eval-args args E P)) S P)
          flow-finish-block-link
          ;; Get the value for the exit switch variable
          (where val (eval-arg arg E P))
          ;; Get the corresponding link
-         (where (LINK x_1 (arg_1 ...)) (lookup-link L val))
+         (where (LINK x_1 args) (lookup-link L val))
          (where block (lookup-block P x_1)))
 
     ;; Empty set of links means we have a return block.
@@ -242,7 +242,7 @@
    ,(foldr
       (lambda (op acc)
         (set-union (term (free-vars-op ,op))
-          (set-subtract (term (assigned-vars ,op)) acc)))
+          (set-subtract acc (term (assigned-vars ,op)))))
       '()
       (term trace))])
 
@@ -260,6 +260,11 @@
   splice : trace ... -> trace
   [(splice (trace-op ...) ...) (trace-op ... ...)])
 
+(define-metafunction FLOW+JIT
+  extend-program : P x block -> P
+  [(extend-program ((x block) ...) x_1 block_1)
+   ((x_1 block_1) (x block) ...)])
+
 (define reduce-jit
   (extend-reduction-relation reduce-flow FLOW+JIT
     ;; These operations will need to check the trace cache at some point
@@ -272,40 +277,55 @@
          ((PB (op ...) arg_1 L) E S P (eval-arg arg E P) ())
          begin-tracing)
 
+    ;; Guard success
+    (--> ((PB ((guard arg val pb) op ...) arg_1 L) E S P)
+         ((PB (op ...) arg_1 L) E S P)
+         guard-success
+         (side-condition (equal? (term (eval-arg arg E P)) (term val))))
+
+    ;; Guard failure
+    (--> ((PB ((guard arg val pb) op ...) _ _) E S P)
+         (pb E S P)
+         guard-failure
+         (side-condition (not (equal? (term (eval-arg arg E P)) (term val)))))
+
     ;; Tracing operations
 
     ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
-         ((PB (op ...) arg_1 L) E S P)
+         ((make-pb block) E S (extend-program P x block))
          jit-stitch
-         (side-condition (equal? (term (eval-arg arg E P val)) (term val))))
+         (side-condition (equal? (term (eval-arg arg E P)) (term val)))
+         (where (block (LINK x (x_1 ...))) (compile trace))
+         )
 
     ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
          ((PB (op ...) arg_1 L) E S P val trace)
          jit-merge-point-tracing
-         (side-condition (not (equal? (term (eval-arg arg E P val)) (term val)))))
+         (side-condition (not (equal? (term (eval-arg arg E P)) (term val)))))
 
     ;; Execute current primop and record it
     (--> ((PB (op_1 op ...) arg L) E S P val (trace-op ...))
          ((PB (op ...) arg L)
-          (eval-primop op_1 E P) S P val
-          (trace-op ... op_1))
+          (eval-primop op_1 E P) S P val (trace-op ... op_1))
          flow-primop-tracing
          (side-condition (term (is-primop op_1))))
 
     ;; Follow a link while tracing. This needs to insert a guard into the trace
     ;; to ensure it does not diverge from the recorded execution path.
-    (--> ((PB () arg L) E S P val trace)
+    (--> ((PB () arg L) E S P val_1 trace)
          ((make-pb block)
           (setup-env block (eval-args args E P))
-          S P val
+          S P val_1
           (splice
             trace
-            (guard arg val (PB () x L))
+            ((guard arg val (PB () arg L)))
             (make-env-moves (block-args block) args)))
          flow-finish-block-link-tracing
+         ;; Get the value for the exit switch variable
          (where val (eval-arg arg E P))
+         ;; Get the corresponding link
          (where (LINK x_1 args) (lookup-link L val))
          (where block (lookup-block P x_1)))
     )
