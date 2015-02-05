@@ -65,8 +65,10 @@
   ;;   begin tracing
   (op          .... (guard arg val pb) (jit-merge-point arg) (jit-can-enter arg) +)
   ;; Operations which may appear in traces. These consist of the normal set of ;; operations along with a guard operation.
-  ;; * guards: bail back to the saved block if the argument supplied does not
-  ;;   evaluate to the value specified.
+  ;; * guards: bail back to the saved partial block if the argument supplied
+  ;;   does not evaluate to the value specified.
+  ;; * The PB on the guard may be useful for holding the compensation code, since
+  ;;   guards are only inserted at control-flow (at this point).
   (trace-op    op)
   (trace       (trace-op ...))
   (trace-state (pb E S P val trace))
@@ -150,13 +152,6 @@
   make-pb : block -> pb
   [(make-pb (BL args (op ...) arg L)) (PB (op ...) arg L)])
 
-;;(define-metafunction FLOW+JIT
-;;  make-env-move : arg x
-
-(define-metafunction FLOW+JIT
-  make-env-moves : (arg ...) (x ...) -> (op ...)
-  [(make-env-moves (arg ..._1) (x ..._1))
-   ((x := (get arg)) ...)])
 
 (define-metafunction FLOW+JIT
   block-args : block -> (arg ...)
@@ -219,6 +214,15 @@
   [(get-args (jit-can-enter arg))     (arg)]
   )
 
+;; Produce a sequence of move operations which correct the naming when tracing
+;; through a link.
+;; Links can cause arbitrary renaming of results, which we represent in a trace
+;; as a sequence of move instructions.
+(define-metafunction FLOW+JIT
+  make-env-moves : (arg ...) (x ...) -> (op ...)
+  [(make-env-moves (arg ..._1) (x ..._1))
+   ((x := (get arg)) ...)])
+
 (define (is-variable? o) (redex-match FLOW+JIT x o))
 
 ;; Compue the free variables of a given operation.
@@ -277,13 +281,22 @@
          ((PB (op ...) arg_1 L) E S P (eval-arg arg E P) ())
          begin-tracing)
 
+    ;; A variant which elides the jit-can-enter operation.
+    ;; This is a simple way to simulate trace selection by having Redex
+    ;; non-deterministically pick whether or not to begin tracing
+    (--> ((PB ((jit-can-enter arg) op ...) arg_1 L) E S P)
+         ((PB (op ...) arg_1 L) E S P)
+         elide-tracing)
+
     ;; Guard success
+    ;; Treat the guard as a noop
     (--> ((PB ((guard arg val pb) op ...) arg_1 L) E S P)
          ((PB (op ...) arg_1 L) E S P)
          guard-success
          (side-condition (equal? (term (eval-arg arg E P)) (term val))))
 
     ;; Guard failure
+    ;; In this case, we revert to the pb saved in the guard
     (--> ((PB ((guard arg val pb) _ ...) _ _) E S P)
          (pb E S P)
          guard-failure
@@ -298,8 +311,7 @@
           (extend-program P x block))
          jit-stitch
          (side-condition (equal? (term (eval-arg arg E P)) (term val)))
-         (where (block (LINK x (x_1 ...))) (compile trace))
-         )
+         (where (block (LINK x (x_1 ...))) (compile trace)))
 
     ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
