@@ -284,7 +284,7 @@
          (side-condition (equal? (term (eval-arg arg E P)) (term val))))
 
     ;; Guard failure
-    (--> ((PB ((guard arg val pb) op ...) _ _) E S P)
+    (--> ((PB ((guard arg val pb) _ ...) _ _) E S P)
          (pb E S P)
          guard-failure
          (side-condition (not (equal? (term (eval-arg arg E P)) (term val)))))
@@ -293,7 +293,9 @@
 
     ;; These operations will need to check the trace cache at some point or add
     (--> ((PB ((jit-merge-point arg) op ...) arg_1 L) E S P val trace)
-         ((make-pb block) E S (extend-program P x block))
+         ((make-pb block)
+          (setup-env block (eval-args (x_1 ...) E P)) S
+          (extend-program P x block))
          jit-stitch
          (side-condition (equal? (term (eval-arg arg E P)) (term val)))
          (where (block (LINK x (x_1 ...))) (compile trace))
@@ -321,7 +323,7 @@
           (splice
             trace
             ((guard arg val (PB () arg L)))
-            (make-env-moves (block-args block) args)))
+            (make-env-moves args (block-args block))))
          flow-finish-block-link-tracing
          ;; Get the value for the exit switch variable
          (where val (eval-arg arg E P))

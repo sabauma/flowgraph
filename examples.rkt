@@ -15,6 +15,7 @@
 (test-equal (term (free-vars-op ,example1)) '(a b c))
 (test-equal (term (assigned-vars ,example1)) '(x))
 
+
 (test-equal (term (free-vars (,example1 ,example2))) '(d e a b c))
 
 (define test-block1
